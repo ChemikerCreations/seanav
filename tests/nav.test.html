@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><title>SeaNav – test</title>
+<style>body{font:14px monospace;padding:1em}.ok{color:#080}.ko{color:#c00;font-weight:bold}</style></head>
+<body><h3>SeaNav – test unitari</h3><pre id="out"></pre>
+<script type="module">
+import * as N from '../js/nav.js';
+import { OrientFilter, targetBearing, effectiveMode } from '../js/orient.js';
+import { buildGpx, parseGpx } from '../js/gpx.js';
+
+const out = document.getElementById('out');
+let pass = 0, fail = 0;
+function log(ok, name, extra = '') {
+  ok ? pass++ : fail++;
+  out.insertAdjacentHTML('beforeend', `<span class="${ok ? 'ok' : 'ko'}">${ok ? 'PASS' : 'FAIL'}</span> ${name} ${extra}\n`);
+}
+const near = (a, b, tol = 1e-6) => Math.abs(a - b) <= tol;
+function eq(name, got, want, tol = 1e-6) {
+  const ok = typeof want === 'number' ? near(got, want, tol) : got === want;
+  log(ok, name, ok ? '' : `got=${got} want=${want}`);
+}
+
+// --- angoli ---
+eq('normDeg(-10)', N.normDeg(-10), 350);
+eq('normDeg(370)', N.normDeg(370), 10);
+eq('angleDiff 359->1', N.angleDiff(359, 1), 2);
+eq('angleDiff 1->359', N.angleDiff(1, 359), -2);
+eq('angleDiff 0->180 abs', Math.abs(N.angleDiff(0, 180)), 180);
+eq('smoothAngle 359->1 a=.5', N.smoothAngle(359, 1, 0.5), 0);
+eq('smoothAngle 1->359 a=.5', N.smoothAngle(1, 359, 0.5), 0);
+eq('smoothAngle 350->10 a=1', N.smoothAngle(350, 10, 1), 10);
+eq('smoothAngle 10->350 a=.25', N.smoothAngle(10, 350, 0.25), 5);
+{
+  const v = N.smoothAngle(0, 180, 0.5);
+  log(v >= 0 && v < 360, 'smoothAngle 0->180 resta in [0,360)', `v=${v}`);
+}
+
+// --- distanze / rilevamenti ---
+const eqt = { lat: 0, lon: 0 };
+eq('1 grado di lat = 60 mn (+-0.2)', N.mToNm(N.distance(eqt, { lat: 1, lon: 0 })), 60.04, 0.2);
+eq('distanza punti coincidenti', N.distance({ lat: 43, lon: 10 }, { lat: 43, lon: 10 }), 0);
+eq('antimeridiano 179.5E -> 179.5W ~ 1 grado', N.mToNm(N.distance({ lat: 0, lon: 179.5 }, { lat: 0, lon: -179.5 })), 60.04, 0.2);
+eq('BRG nord', N.rhumbBearing(eqt, { lat: 1, lon: 0 }), 0);
+eq('BRG est', N.rhumbBearing(eqt, { lat: 0, lon: 1 }), 90);
+eq('BRG sud', N.rhumbBearing(eqt, { lat: -1, lon: 0 }), 180);
+eq('BRG ovest', N.rhumbBearing(eqt, { lat: 0, lon: -1 }), 270);
+eq('BRG attraverso antimeridiano (E)', N.rhumbBearing({ lat: 0, lon: 179.5 }, { lat: 0, lon: -179.5 }), 90);
+eq('BRG attraverso antimeridiano (W)', N.rhumbBearing({ lat: 0, lon: -179.5 }, { lat: 0, lon: 179.5 }), 270);
+eq('BRG punti coincidenti = finito', Number.isFinite(N.rhumbBearing(eqt, eqt)) ? 1 : 0, 1);
+eq('BRG verso il polo = 0', N.rhumbBearing({ lat: 89, lon: 0 }, { lat: 90, lon: 0 }), 0);
+eq('rhumbDistance ~ haversine su tratta breve', N.rhumbDistance({ lat: 43, lon: 10 }, { lat: 43.1, lon: 10.1 }), N.distance({ lat: 43, lon: 10 }, { lat: 43.1, lon: 10.1 }), 20);
+{
+  const p = N.destinationPoint({ lat: 43, lon: 10 }, 45, 5000);
+  eq('destinationPoint distanza 5000 m', N.distance({ lat: 43, lon: 10 }, p), 5000, 0.5);
+  eq('destinationPoint rilevamento 45', N.initialBearing({ lat: 43, lon: 10 }, p), 45, 0.05);
+}
+{
+  const p = N.destinationPoint({ lat: 0, lon: 179.9 }, 90, 50000);
+  log(p.lon < 0 && p.lon > -180, 'destinationPoint oltre antimeridiano', `lon=${p.lon}`);
+}
+
+// --- XTE ---
+{
+  const s = { lat: 0, lon: 0 }, d = { lat: 1, lon: 0 };
+  const right = N.crossTrack(s, d, { lat: 0.5, lon: 0.01 });
+  const left = N.crossTrack(s, d, { lat: 0.5, lon: -0.01 });
+  log(right > 0 && near(right, 1112, 15), 'XTE a destra positivo ~1112 m', `v=${right}`);
+  log(left < 0 && near(left, -1112, 15), 'XTE a sinistra negativo', `v=${left}`);
+  eq('XTE sulla linea', N.crossTrack(s, d, { lat: 0.5, lon: 0 }), 0, 0.01);
+  eq('XTE start==dest', N.crossTrack(s, s, { lat: 0.5, lon: 0.5 }), 0);
+}
+
+// --- VMG / ETA ---
+eq('VMG in rotta', N.vmg(6, 90, 90), 6);
+eq('VMG perpendicolare', N.vmg(6, 0, 90), 0, 1e-9);
+log(N.vmg(6, 270, 90) < 0, 'VMG che si allontana < 0');
+eq('VMG con 359/1', N.vmg(10, 359, 1), 10 * Math.cos(2 * Math.PI / 180));
+eq('ETA 6 mn a 6 kn = 1h', N.etaSeconds(6 * 1852, 6), 3600, 1);
+eq('ETA VMG<=0 -> null', N.etaSeconds(1000, -2) === null ? 1 : 0, 1);
+eq('ETA SOG~0 -> null', N.etaSeconds(1000, 0.05) === null ? 1 : 0, 1);
+
+// --- conversioni ---
+eq('1 m/s = 1.943844 kn', N.msToKn(1), 1.943844);
+eq('1 mn = 1852 m', N.nmToM(1), 1852);
+
+eq('formatDuration < 1h', N.formatDuration(962), '16m 02s');
+eq('formatDuration >= 1h', N.formatDuration(7500), '2h 05m');
+eq('formatDuration null', N.formatDuration(null), '--:--');
+
+// --- formati coordinate ---
+{
+  const c = N.formatCoords(43.5, -9.25, 'DM');
+  eq('DM lat', c.lat, "43° 30.000' N");
+  eq('DM lon', c.lon, "009° 15.000' W");
+  const d = N.formatCoords(43.5, -9.25, 'DMS');
+  eq('DMS lat', d.lat, '43° 30\' 00.00" N');
+  const dd = N.formatCoords(-0.5, 0.5, 'DD');
+  eq('DD lat', dd.lat, '00.50000° S');
+  eq('DM arrotondamento 59.9999', N.formatCoords(43.9999999, 0, 'DM').lat, "44° 00.000' N");
+}
+eq('parseCoord decimale', N.parseCoord('43.5'), 43.5);
+eq('parseCoord virgola', N.parseCoord('43,5'), 43.5);
+eq('parseCoord DM S', N.parseCoord("43 30.0 S"), -43.5);
+eq('parseCoord DMS W', N.parseCoord('9°15\'00" W'), -9.25);
+eq('parseCoord negativo', N.parseCoord('-9.25'), -9.25);
+eq('parseCoord invalido', N.parseCoord('abc'), null);
+eq('parseCoord minuti >=60', N.parseCoord('10 75'), null);
+
+// --- orientamento ---
+eq('effectiveMode dest senza wp', effectiveMode('dest', false), 'course');
+eq('effectiveMode dest con wp', effectiveMode('dest', true), 'dest');
+eq('north -> 0', targetBearing('north', { pos: eqt }), 0);
+eq('course con sog 5', targetBearing('course', { cog: 123, sog: 5 }), 123);
+eq('course con sog 0.3 -> null (zona morta)', targetBearing('course', { cog: 123, sog: 0.3 }) === null ? 1 : 0, 1);
+eq('dest = BRG, indipendente da sog', targetBearing('dest', { pos: eqt, dest: { lat: 0, lon: 1 }, sog: 0, cog: null }), 90);
+eq('route usa partenza', targetBearing('route', { pos: { lat: 5, lon: 5 }, routeStart: eqt, dest: { lat: 1, lon: 0 } }), 0);
+{
+  // barca che orbita attorno al waypoint: BRG gira di 360 gradi; il filtro non deve mai fare salti > 30 gradi
+  const dest = { lat: 43, lon: 10 };
+  const f = new OrientFilter({ alpha: 0.3, threshold: 3 });
+  let prev = null, maxJump = 0, applied = 0;
+  for (let i = 0; i <= 720; i++) {
+    const a = (i * 2) % 360; // 2 gradi per passo, due giri completi
+    const pos = N.destinationPoint(dest, a, 800);
+    const brg = targetBearing('dest', { pos, dest });
+    const v = f.update(brg);
+    if (v != null) {
+      applied++;
+      if (prev != null) maxJump = Math.max(maxJump, Math.abs(N.angleDiff(prev, v)));
+      prev = v;
+    }
+  }
+  log(maxJump < 15, 'orbita attorno al waypoint: nessun salto spurio (max passo)', `maxJump=${maxJump.toFixed(2)} aggiornamenti=${applied}`);
+  log(applied > 100, 'orbita: la mappa effettivamente ruota', `aggiornamenti=${applied}`);
+}
+{
+  const f = new OrientFilter({ alpha: 0.5, threshold: 3 });
+  f.update(358);
+  const v = f.update(2);
+  log(v === null || N.angleDiff(358, v) > 0, 'filtro 358->2 passa da 0, non a ritroso', `v=${v}`);
+}
+
+// --- GPX ---
+{
+  const wps = [{ name: 'Porto & <test>', lat: 43.5, lon: 10.25, note: 'nota', icon: 'port', created: 1700000000000 }];
+  const tracks = [{ name: 'Giro', points: [
+    { lat: 43, lon: 10, t: 1700000000000, seg: 0, sog: 5, cog: 90 },
+    { lat: 43.001, lon: 10.001, t: 1700000005000, seg: 0 },
+    { lat: 43.01, lon: 10.01, t: 1700000100000, seg: 1 },
+  ] }];
+  const xml = buildGpx({ waypoints: wps, tracks });
+  const back = parseGpx(xml);
+  eq('GPX roundtrip: waypoint', back.waypoints.length, 1);
+  eq('GPX roundtrip: nome con caratteri speciali', back.waypoints[0].name, 'Porto & <test>');
+  eq('GPX roundtrip: lat', back.waypoints[0].lat, 43.5);
+  eq('GPX roundtrip: icona', back.waypoints[0].icon, 'port');
+  eq('GPX roundtrip: tracce', back.tracks.length, 1);
+  eq('GPX roundtrip: punti', back.tracks[0].points.length, 3);
+  eq('GPX roundtrip: segmenti separati nei buchi', back.tracks[0].points[2].seg, 1);
+  eq('GPX roundtrip: tempo', back.tracks[0].points[1].t, 1700000005000);
+  log(xml.includes('<trkseg>') && (xml.match(/<trkseg>/g) || []).length === 2, 'GPX contiene 2 trkseg');
+}
+
+out.insertAdjacentHTML('beforeend', `\n<b>${pass} passati, ${fail} falliti</b>\n`);
+document.title = `TESTS ${fail === 0 ? 'OK' : 'FAIL'} ${pass}/${pass + fail}`;
+</script></body></html>

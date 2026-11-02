@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0b2239">
+  <title>SeaNav</title>
+  <link rel="stylesheet" href="vendor/maplibre-gl.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <div id="map"></div>
+
+  <!-- barra dati sempre visibile -->
+  <header id="hud" aria-live="off">
+    <div class="hud-main">
+      <div class="cell"><span class="lbl">SOG</span><span class="big" id="v-sog">--</span><span class="unit" id="u-sog">kn</span></div>
+      <div class="cell"><span class="lbl">COG</span><span class="big" id="v-cog">---</span><span class="unit">°T</span></div>
+      <div class="cell gpsstate"><span class="dot" id="gps-dot"></span><span id="v-acc" class="small">GPS</span></div>
+      <div class="cell rec" id="rec-ind" hidden><span class="recdot"></span>REC <span id="v-rec">0.0</span></div>
+    </div>
+    <div class="hud-sub"><span id="v-lat">--</span> <span id="v-lon">--</span></div>
+    <div class="hud-goto" id="hud-goto" hidden>
+      <span class="gname" id="g-name"></span>
+      <span>BRG <b id="g-brg">---</b>°</span>
+      <span>DST <b id="g-dst">--</b></span>
+      <span>ETA <b id="g-eta">--:--</b></span>
+      <span>XTE <b id="g-xte">--</b></span>
+    </div>
+  </header>
+
+  <button id="rose" aria-label="Nord: tocca per Nord in alto"><svg viewBox="-24 -24 48 48" width="52" height="52"><circle r="22" class="rose-bg"/><path d="M0 -18 L6 0 L-6 0 Z" fill="#e03131"/><path d="M0 18 L6 0 L-6 0 Z" fill="#dee2e6"/><text y="-24" text-anchor="middle" font-size="9" fill="#fff" dy="9">N</text></svg></button>
+  <button id="btn-orient" class="chipbtn" aria-label="Modalità orientamento mappa"><span id="orient-label">N</span></button>
+
+  <div id="crosshair" hidden></div>
+  <div id="pickbar" hidden><span id="pick-text"></span><button id="pick-cancel">Annulla</button></div>
+  <div id="measurebar" hidden><span id="measure-text"></span><button id="measure-off">Chiudi</button></div>
+
+  <div id="fabs">
+    <button class="fab" id="fab-follow" aria-label="Segui posizione">◎</button>
+    <button class="fab" id="fab-wp" aria-label="Aggiungi waypoint sulla mappa">＋</button>
+    <button class="fab" id="fab-rec" aria-label="Registra traccia">●</button>
+    <button class="fab" id="fab-measure" aria-label="Misura distanza">⟷</button>
+    <button class="fab" id="fab-dim" aria-label="Schermo scuro">☾</button>
+  </div>
+  <button id="mob" aria-label="Uomo a mare">MOB</button>
+
+  <!-- schermata navigazione (numeri grandi) -->
+  <section id="navview" hidden>
+    <div class="nv-head"><span id="nv-name">Nessuna destinazione</span><button id="nv-stop" class="btn danger" hidden>Termina</button></div>
+    <div class="nv-arrow"><svg viewBox="-60 -60 120 120" width="190" height="190"><circle r="56" class="nvc"/><g id="nv-needle"><path d="M0 -48 L14 10 L0 2 L-14 10 Z" fill="#f03e8f"/></g><text y="-44" dy="0" text-anchor="middle" font-size="9" fill="#adb5bd" transform="translate(0,-4)">PRUA/COG</text></svg></div>
+    <div class="nv-grid">
+      <div class="nvc2"><span class="lbl">BRG °T</span><span class="huge" id="n-brg">---</span></div>
+      <div class="nvc2"><span class="lbl">DST <i id="n-dstu">mn</i></span><span class="huge" id="n-dst">--</span></div>
+      <div class="nvc2"><span class="lbl">ETA</span><span class="huge" id="n-eta">--:--</span><span class="small" id="n-etaclk"></span></div>
+      <div class="nvc2"><span class="lbl">XTE <i id="n-xteu">mn</i></span><span class="huge" id="n-xte">--</span><span class="small" id="n-xtes"></span></div>
+      <div class="nvc2"><span class="lbl">VMG <i class="su">kn</i></span><span class="huge" id="n-vmg">--</span></div>
+      <div class="nvc2"><span class="lbl">SOG <i class="su">kn</i> / COG</span><span class="huge" id="n-sog">--</span><span class="small" id="n-cog"></span></div>
+    </div>
+    <p class="small muted" id="nv-hint">Seleziona un waypoint e premi "Vai a".</p>
+  </section>
+
+  <nav id="tabs">
+    <button data-tab="map" class="on">Mappa</button>
+    <button data-tab="nav">Navigazione</button>
+    <button data-tab="menu">Menu</button>
+  </nav>
+
+  <div id="sheet-root"></div>
+  <div id="alert-root"></div>
+  <div id="toast-root"></div>
+  <div id="dimscreen" hidden>
+    <div class="dim-row"><span id="d-sog">--</span> kn</div>
+    <div class="dim-row small"><span id="d-info"></span></div>
+    <div class="dim-row small" id="d-rec"></div>
+    <div class="dim-hint">tocca per riattivare lo schermo</div>
+  </div>
+</div>
+<script src="vendor/maplibre-gl.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
